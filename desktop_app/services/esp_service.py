@@ -309,6 +309,23 @@ class ESPService:
         self._notify_connection_change(False)
         self.connection_type = None
     
+    def check_connection(self) -> bool:
+        """Force a check of the current connection status."""
+        was_connected = self.is_connected
+        is_now_connected = False
+        
+        if self.connection_type == 'mqtt' and self.mqtt_client:
+            is_now_connected = self.mqtt_client.is_connected()
+        elif self.connection_type == 'serial' and self.serial_conn:
+            is_now_connected = self.serial_conn.is_open
+            
+        if was_connected != is_now_connected:
+            self._notify_connection_change(is_now_connected)
+            if not is_now_connected:
+                self.connection_type = None
+                
+        return is_now_connected
+
     def auto_connect(self) -> bool:
         """Attempt to auto-connect using best available method."""
         # Try MQTT first

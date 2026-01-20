@@ -145,11 +145,25 @@ class CameraWidget(ctk.CTkFrame):
                 # Draw QR box if in QR mode
                 if self.qr_mode:
                     display_frame = frame.copy()
-                    if self.qr_detections:
-                        x, y, w, h = self.qr_detections
-                        # Yellow if detected but not success, Green if success
-                        color = (0, 255, 0) if self.qr_success else (0, 255, 255)
-                        cv2.rectangle(display_frame, (x, y), (x + w, y + h), color, 4)
+                    
+                    # Calculate center square
+                    size = 300
+                    x = (self.cam_width - size) // 2
+                    y = (self.cam_height - size) // 2
+                    
+                    # Yellow by default, Green if successful detection
+                    color = (0, 255, 0) if self.qr_success else (0, 255, 255)
+                    
+                    # Draw corners of the aiming square for a modern look
+                    thick = 2
+                    cv2.rectangle(display_frame, (x, y), (x + size, y + size), color, thick)
+                    
+                    # Add "Aim QR Code Here" text
+                    text = "AIM QR CODE HERE"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    text_size = cv2.getTextSize(text, font, 0.6, 2)[0]
+                    tx = (self.cam_width - text_size[0]) // 2
+                    cv2.putText(display_frame, text, (tx, y - 15), font, 0.6, color, 2)
                 
                 # Draw face boxes if detection enabled and not in QR mode
                 elif self.detected_faces:

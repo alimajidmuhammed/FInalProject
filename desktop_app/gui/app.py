@@ -92,12 +92,20 @@ class App(ctk.CTk):
         
         # Attempt connection in background (to not block UI)
         self.after(1000, self._connect_esp)
-        
     def _connect_esp(self):
         """Attempt to connect to ESP32."""
         if not esp_service.is_connected:
             print("[*] Auto-connecting to ESP32...")
             esp_service.auto_connect()
+        
+        # Start watchdog to ensure status stays accurate
+        self._esp_watchdog()
+            
+    def _esp_watchdog(self):
+        """Periodically verify ESP connection status."""
+        esp_service.check_connection()
+        # Run every 5 seconds
+        self.after(5000, self._esp_watchdog)
     
     def _setup_ui(self):
         """Setup the main UI layout."""

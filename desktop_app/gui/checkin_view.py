@@ -367,10 +367,6 @@ class CheckInView(ctk.CTkFrame):
     def _scan_qr_code(self, frame):
         """Scan frame for QR codes."""
         try:
-            # Update bounds for visual feedback
-            bounds = qr_service.get_qr_bounds(frame)
-            self.camera.set_qr_detections(bounds)
-            
             qr_data = qr_service.decode_qr_from_image(frame)
             
             if qr_data and qr_data.get('type') == 'flight_ticket':
@@ -385,7 +381,7 @@ class CheckInView(ctk.CTkFrame):
                     logger.info(f"QR Code detected: {ticket_number}")
                     
                     # Show scanning indicator and turn box green
-                    self.camera.set_qr_detections(self.camera.qr_detections, success=True)
+                    self.camera.set_qr_detections(None, success=True)
                     self.recognition_label.configure(
                         text="● Processing check-in...",
                         text_color=COLORS['accent']
