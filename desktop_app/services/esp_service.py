@@ -5,7 +5,8 @@ Supports MQTT (WiFi) and Serial (USB) connections.
 import json
 import threading
 import time
-from typing import Optional, Callable
+import logging
+from typing import Optional, Callable, List
 from enum import Enum
 
 try:
@@ -25,6 +26,8 @@ from config import (
     MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_GATE, MQTT_TOPIC_STATUS,
     SERIAL_PORT, SERIAL_BAUD
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ESPCommand(Enum):
@@ -53,6 +56,30 @@ class ESPService:
         self._connection_callbacks: List[Callable] = []
         self._reconnect_thread: Optional[threading.Thread] = None
         self._should_reconnect = False
+        self._monitor_thread: Optional[threading.Thread] = None
+        self._stop_monitor = threading.Event()
+        
+        # Start background monitoring
+        self._start_monitoring()
+
+    def _start_monitoring(self):
+        """Start background thread to monitor connection health."""
+        if self._monitor_thread and self._monitor_thread.is_alive():
+            return
+            
+        self._stop_monitor.clear()
+        
+        def monitor():
+            while not self._stop_monitor.is_set():
+                try:
+                    self.check_connection()
+                except Exception as e:
+                    logger.debug(f"Error in monitor thread: {e}")
+                time.sleep(1.0) # Check every second for real-time feel
+                
+        self._monitor_thread = threading.Thread(target=monitor, daemon=True)
+        self._monitor_thread.start()
+        logger.info("ESP background monitoring started")
 
     def register_connection_callback(self, callback: Callable):
         """Register a callback for connection state changes (is_connected: bool)."""
@@ -295,6 +322,8 @@ class ESPService:
     
     def disconnect(self):
         """Disconnect from ESP32."""
+        self._stop_monitor.set()
+        
         if self.mqtt_client:
             self.mqtt_client.loop_stop()
             self.mqtt_client.disconnect()
