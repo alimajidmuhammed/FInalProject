@@ -55,7 +55,7 @@ class ESPService:
         self._status_callback: Optional[Callable] = None
         self._connection_callbacks: List[Callable] = []
         self._reconnect_thread: Optional[threading.Thread] = None
-        self._should_reconnect = False
+        self._should_reconnect = True
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_monitor = threading.Event()
         
@@ -73,6 +73,16 @@ class ESPService:
             while not self._stop_monitor.is_set():
                 try:
                     self.check_connection()
+                    
+                    # Auto-reconnect if lost
+                    if not self.is_connected and self._should_reconnect:
+                        if not hasattr(self, '_last_reconnect_attempt'):
+                            self._last_reconnect_attempt = 0
+                        
+                        if time.time() - self._last_reconnect_attempt > 10: # Retry every 10s
+                            logger.info("ESP attempting auto-reconnect...")
+                            self._last_reconnect_attempt = time.time()
+                            self.auto_connect()
                 except Exception as e:
                     logger.debug(f"Error in monitor thread: {e}")
                 time.sleep(1.0) # Check every second for real-time feel
@@ -85,11 +95,12 @@ class ESPService:
         """Register a callback for connection state changes (is_connected: bool)."""
         if callback not in self._connection_callbacks:
             self._connection_callbacks.append(callback)
-            # Immediately notify with current state
+            # Immediately notify with current state in a thread-safe way
             try:
+                # Use after() if it's a UI callback, but here we just call it
                 callback(self.is_connected)
             except Exception as e:
-                print(f"Error in initial connection callback: {e}")
+                logger.debug(f"Error in initial connection callback: {e}")
 
     def unregister_connection_callback(self, callback: Callable):
         """Unregister a connection callback."""
@@ -133,12 +144,13 @@ class ESPService:
             self.mqtt_client.connect(broker, port, keepalive=60)
             self.mqtt_client.loop_start()
             
-            # Wait briefly for connection
-            time.sleep(1)
-            
-            if self.is_connected:
-                self.connection_type = 'mqtt'
-                return True
+            # Wait longer for connection or use a more reactive check
+            for _ in range(20): # 2 seconds total
+                if self.is_connected:
+                    self.connection_type = 'mqtt'
+                    return True
+                time.sleep(0.1)
+                
             return False
             
         except Exception as e:
@@ -226,12 +238,12 @@ class ESPService:
                             line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
                             if line and self._status_callback:
                                 self._status_callback('serial', line)
-                        except UnicodeDecodeError:
-                            continue  # Ignore encoding errors
-                    time.sleep(0.1)
+                        except (UnicodeDecodeError, serial.SerialException):
+                            continue  # Ignore encoding/transient errors
+                    time.sleep(0.05)
                 except Exception as e:
-                    print(f"Serial read fatal error: {e}")
-                    self.disconnect()
+                    if self.serial_conn: # Only log if we didn't intend to close
+                        logger.debug(f"Serial read loop terminated: {e}")
                     break
         
         thread = threading.Thread(target=reader, daemon=True)
@@ -347,28 +359,46 @@ class ESPService:
             # Check if client is still connected to broker
             is_now_connected = self.mqtt_client.is_connected()
         elif self.connection_type == 'serial' and self.serial_conn:
-            # Check if port still exists in system
+            # Check if port is open
             try:
-                available_ports = [p.device for p in serial.tools.list_ports.comports()]
-                is_now_connected = self.serial_conn.is_open and self.serial_conn.port in available_ports
+                is_now_connected = self.serial_conn.is_open
+                # Only do slow port scan if is_open is False but we think we are connected
+                if not is_now_connected:
+                    available_ports = [p.device for p in serial.tools.list_ports.comports()]
+                    is_now_connected = self.serial_conn.port in available_ports
             except Exception:
                 is_now_connected = False
             
         if was_connected != is_now_connected:
-            logger.info(f"ESP connection state changed: {was_connected} -> {is_now_connected}")
-            self._notify_connection_change(is_now_connected)
             if not is_now_connected:
+                # Use a small grace period for transient drops
+                if not hasattr(self, '_disconnect_grace'):
+                    self._disconnect_grace = 0
+                self._disconnect_grace += 1
+                if self._disconnect_grace < 3: # 3 failed checks before declaring dead
+                    return was_connected
+                
+                logger.info(f"ESP connection lost (type: {self.connection_type})")
+                self._notify_connection_change(False)
                 self.connection_type = None
-                # If we lost serial, close it properly
-                if self.serial_conn:
-                    try:
-                        self.serial_conn.close()
-                    except:
-                        pass
-                    self.serial_conn = None
+                self._cleanup_connections()
+            else:
+                self._disconnect_grace = 0
+                logger.info("ESP connection restored")
+                self._notify_connection_change(True)
                 
         return is_now_connected
 
+    def _cleanup_connections(self):
+        """Cleanly close all connections without triggering race conditions."""
+        if self.serial_conn:
+            try:
+                conn = self.serial_conn
+                self.serial_conn = None # Set to None first for reader thread
+                conn.close()
+            except:
+                pass
+        
     def auto_connect(self) -> bool:
         """Attempt to auto-connect using best available method."""
         # Try MQTT first
