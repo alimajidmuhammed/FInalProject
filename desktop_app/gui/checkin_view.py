@@ -17,7 +17,6 @@ from services.esp_service import esp_service
 from services.sound_service import sound_service
 from services.audit_service import audit_service
 from services.qr_service import qr_service
-from services.i18n_service import i18n, t
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ class CheckInView(ctk.CTkFrame):
         
         self.header_title = ctk.CTkLabel(
             header,
-            text="🛂 " + t('checkin.title'),
+            text="🛂 Self Check-In",
             font=FONTS['heading'],
             text_color=COLORS['text_primary']
         )
@@ -80,7 +79,7 @@ class CheckInView(ctk.CTkFrame):
         
         self.header_subtitle = ctk.CTkLabel(
             header,
-            text=t('checkin.subtitle'),
+            text="Look at the camera for automatic check-in",
             font=FONTS['body'],
             text_color=COLORS['text_secondary']
         )
@@ -92,7 +91,7 @@ class CheckInView(ctk.CTkFrame):
         
         self.face_mode_btn = ctk.CTkButton(
             mode_frame,
-            text="👤 " + t('checkin.faceRecognition'),
+            text="👤 Face Recognition",
             font=FONTS['body'],
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
@@ -106,7 +105,7 @@ class CheckInView(ctk.CTkFrame):
         
         self.qr_mode_btn = ctk.CTkButton(
             mode_frame,
-            text="📱 " + t('checkin.qrCode'),
+            text="📱 QR Code",
             font=FONTS['body'],
             fg_color=COLORS['bg_card'],
             hover_color=COLORS['bg_hover'],
@@ -172,7 +171,7 @@ class CheckInView(ctk.CTkFrame):
         
         self.manual_checkin_btn = ctk.CTkButton(
             manual_frame,
-            text=t('nav.checkin'),
+            text="Check In",
             font=FONTS['button'],
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
@@ -196,7 +195,7 @@ class CheckInView(ctk.CTkFrame):
                 text_color=COLORS['text_primary']
             )
             self.recognition_label.configure(
-                text="● " + t('checkin.lookAtCamera'),
+                text="● Scanning for registered faces...",
                 text_color=COLORS['warning']
             )
             self._qr_scanning = False
@@ -210,7 +209,7 @@ class CheckInView(ctk.CTkFrame):
                 text_color=COLORS['text_primary']
             )
             self.recognition_label.configure(
-                text="● " + t('checkin.holdQR'),
+                text="● Hold QR code in front of camera",
                 text_color=COLORS['info']
             )
             self._qr_scanning = True
@@ -359,7 +358,7 @@ class CheckInView(ctk.CTkFrame):
                 
                 # Optional: Show unknown message on UI
                 self.recognition_label.configure(
-                    text="● " + t('checkin.notRecognized'),
+                    text="● Face not recognized",
                     text_color=COLORS['error']
                 )
     
@@ -381,7 +380,7 @@ class CheckInView(ctk.CTkFrame):
                     
                     # Show scanning indicator
                     self.recognition_label.configure(
-                        text="● " + t('checkin.processing'),
+                        text="● Processing check-in...",
                         text_color=COLORS['accent']
                     )
                     
@@ -427,7 +426,7 @@ class CheckInView(ctk.CTkFrame):
         """Reset QR scanning state."""
         self._last_qr_ticket = None
         self.recognition_label.configure(
-            text="● " + t('checkin.holdQR'),
+            text="● Hold QR code in front of camera",
             text_color=COLORS['info']
         )
     
@@ -642,11 +641,3 @@ class CheckInView(ctk.CTkFrame):
         """Called when view is hidden."""
         self.camera.stop()
         voice_service.stop()
-    
-    def refresh_language(self):
-        """Refresh UI text for language change."""
-        self.header_title.configure(text="🛂 " + t('checkin.title'))
-        self.header_subtitle.configure(text=t('checkin.subtitle'))
-        self.face_mode_btn.configure(text="👤 " + t('checkin.faceRecognition'))
-        self.qr_mode_btn.configure(text="📱 " + t('checkin.qrCode'))
-        self._set_mode(self.checkin_mode)  # Refresh mode labels

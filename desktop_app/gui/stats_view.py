@@ -378,7 +378,7 @@ class StatsView(ctk.CTkFrame):
         
         # ESP32 status
         from services.esp_service import esp_service
-        esp_connected = esp_service.is_connected()
+        esp_connected = esp_service.is_connected
         
         esp_row = ctk.CTkFrame(health_frame, fg_color="transparent")
         esp_row.pack(fill="x", padx=SPACING['lg'], pady=SPACING['xs'])

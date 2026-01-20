@@ -1,0 +1,5 @@
+Period,Bookings,Check-Ins,Cancellations,Resets,Failed Check-Ins
+Today,5,5,0,0,0
+Week,13,19,0,9,0
+Month,27,35,0,14,0
+All_Time,27,35,0,14,0

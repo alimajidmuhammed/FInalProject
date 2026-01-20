@@ -1,7 +1,7 @@
 """
 Main Application Window - Flight Kiosk System.
 Modern dark-themed interface with sidebar navigation.
-Features: Theme toggle, session timeout, keyboard shortcuts, multi-language support.
+Features: Theme toggle, session timeout, keyboard shortcuts.
 """
 import customtkinter as ctk
 import logging
@@ -12,11 +12,9 @@ from gui.checkin_view import CheckInView
 from gui.history_view import HistoryView
 from gui.dashboard_view import DashboardView
 from gui.stats_view import StatsView
-from gui.components.language_selector import LanguageSelector
 from config import SESSION_TIMEOUT_SECONDS
 from services.audit_service import audit_service
 from services.esp_service import esp_service
-from services.i18n_service import i18n, t
 from services.logger_service import logger_service
 from database.db_manager import db
 
@@ -202,11 +200,11 @@ class App(ctk.CTk):
         self.nav_buttons = {}
         
         nav_items = [
-            ("booking", "🎫", t('nav.booking'), "F1"),
-            ("checkin", "🛂", t('nav.checkin'), "F2"),
-            ("history", "📋", t('nav.history'), "F3"),
-            ("dashboard", "📊", t('nav.dashboard'), "F4"),
-            ("stats", "📈", t('nav.stats'), "F5"),
+            ("booking", "🎫", "Book Flight", "F1"),
+            ("checkin", "🛂", "Check-In", "F2"),
+            ("history", "📋", "History", "F3"),
+            ("dashboard", "📊", "Dashboard", "F4"),
+            ("stats", "📈", "Statistics", "F5"),
         ]
         
         for key, icon, title, shortcut in nav_items:
@@ -241,30 +239,6 @@ class App(ctk.CTk):
         bottom_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         bottom_frame.pack(side="bottom", fill="x", padx=SPACING['lg'], pady=SPACING['lg'])
         
-        # Language selector
-        lang_frame = ctk.CTkFrame(
-            bottom_frame,
-            fg_color=COLORS['bg_card'],
-            corner_radius=RADIUS['md']
-        )
-        lang_frame.pack(fill="x", pady=SPACING['sm'])
-        
-        lang_content = ctk.CTkFrame(lang_frame, fg_color="transparent")
-        lang_content.pack(padx=SPACING['md'], pady=SPACING['sm'], fill="x")
-        
-        ctk.CTkLabel(
-            lang_content,
-            text=t('settings.language'),
-            font=FONTS['caption'],
-            text_color=COLORS['text_muted']
-        ).pack(anchor="w")
-        
-        self.lang_selector = LanguageSelector(
-            lang_content,
-            on_change=self._on_language_change
-        )
-        self.lang_selector.pack(fill="x", pady=(SPACING['xs'], 0))
-        
         # ESP Status
         self.esp_status_frame = ctk.CTkFrame(
             bottom_frame,
@@ -278,14 +252,14 @@ class App(ctk.CTk):
         
         ctk.CTkLabel(
             status_content,
-            text=t('stats.espStatus'),
+            text="ESP32 Status",
             font=FONTS['caption'],
             text_color=COLORS['text_muted']
         ).pack(anchor="w")
         
         self.esp_status_label = ctk.CTkLabel(
             status_content,
-            text="● " + t('stats.disconnected'),
+            text="● Not Connected",
             font=FONTS['body_small'],
             text_color=COLORS['error']
         )
@@ -470,23 +444,14 @@ class App(ctk.CTk):
         """Update ESP32 connection status display."""
         if connected:
             self.esp_status_label.configure(
-                text=f"● {t('stats.connected')} {message}",
+                text=f"● Connected {message}",
                 text_color=COLORS['success']
             )
         else:
             self.esp_status_label.configure(
-                text="● " + t('stats.disconnected'),
+                text="● Not Connected",
                 text_color=COLORS['error']
             )
-    
-    def _on_language_change(self, lang_code: str):
-        """Handle language change."""
-        logger.info(f"Language changed to: {lang_code}")
-        # Refresh the current view if it supports it
-        if self.current_view:
-            view = self.views.get(self.current_view)
-            if view and hasattr(view, 'refresh_language'):
-                view.refresh_language()
     
     def on_closing(self):
         """Handle window close."""

@@ -1,6 +1,7 @@
 """
 QR Code Service for Flight Kiosk System.
 Handles QR code generation for tickets and scanning for check-in.
+Uses OpenCV's built-in QR decoder with pyzbar as fallback.
 """
 import json
 import logging
@@ -8,6 +9,19 @@ from typing import Optional, Dict, Tuple
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+try:
+    import cv2
+    HAS_OPENCV = True
+    # Check if OpenCV has QR detector
+    try:
+        _test_detector = cv2.QRCodeDetector()
+        HAS_OPENCV_QR = True
+    except Exception:
+        HAS_OPENCV_QR = False
+except ImportError:
+    HAS_OPENCV = False
+    HAS_OPENCV_QR = False
 
 try:
     import qrcode
@@ -18,12 +32,11 @@ except ImportError:
     logger.warning("qrcode library not installed. QR generation will be disabled.")
 
 try:
-    import cv2
     from pyzbar import pyzbar
     HAS_PYZBAR = True
 except ImportError:
     HAS_PYZBAR = False
-    logger.warning("pyzbar library not installed. QR scanning will be disabled.")
+    logger.info("pyzbar not available, using OpenCV QR detector")
 
 
 class QRService:
@@ -33,6 +46,20 @@ class QRService:
         """Initialize QR service."""
         self.qr_dir = Path(__file__).parent.parent.parent / 'data' / 'qr_codes'
         self.qr_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize OpenCV QR detector
+        if HAS_OPENCV_QR:
+            self._qr_detector = cv2.QRCodeDetector()
+        else:
+            self._qr_detector = None
+        
+        # Log available methods
+        if HAS_OPENCV_QR:
+            logger.info("QR scanning: OpenCV QRCodeDetector available")
+        elif HAS_PYZBAR:
+            logger.info("QR scanning: pyzbar available")
+        else:
+            logger.warning("QR scanning: No scanner available!")
     
     def generate_ticket_qr(
         self,
@@ -60,7 +87,7 @@ class QRService:
             return None
         
         try:
-            # Create QR data payload
+            # Create QR data payload - simplified for easier reading
             qr_data = {
                 'type': 'flight_ticket',
                 'ticket': ticket_number,
@@ -70,9 +97,9 @@ class QRService:
                 'version': '1.0'
             }
             
-            # Create QR code
+            # Create QR code with high error correction
             qr = qrcode.QRCode(
-                version=1,
+                version=2,  # Slightly larger for better readability
                 error_correction=ERROR_CORRECT_H,
                 box_size=10,
                 border=4
@@ -80,8 +107,8 @@ class QRService:
             qr.add_data(json.dumps(qr_data))
             qr.make(fit=True)
             
-            # Create image with custom colors
-            img = qr.make_image(fill_color='#0a0e17', back_color='white')
+            # Create image with high contrast colors
+            img = qr.make_image(fill_color='black', back_color='white')
             
             # Determine save path
             if save_path is None:
@@ -99,6 +126,7 @@ class QRService:
     def decode_qr_from_image(self, image) -> Optional[Dict]:
         """
         Decode QR code from an image (numpy array).
+        Uses OpenCV first, then falls back to pyzbar.
         
         Args:
             image: OpenCV image (numpy array)
@@ -106,10 +134,54 @@ class QRService:
         Returns:
             Decoded ticket data dict, or None if not found/invalid
         """
-        if not HAS_PYZBAR:
-            logger.error("pyzbar library not available")
-            return None
+        # Try OpenCV QR detector first (no external dependencies)
+        if HAS_OPENCV_QR and self._qr_detector is not None:
+            result = self._decode_with_opencv(image)
+            if result:
+                return result
         
+        # Fall back to pyzbar if available
+        if HAS_PYZBAR:
+            result = self._decode_with_pyzbar(image)
+            if result:
+                return result
+        
+        return None
+    
+    def _decode_with_opencv(self, image) -> Optional[Dict]:
+        """Decode QR using OpenCV's built-in detector."""
+        try:
+            # Convert to grayscale for better detection
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image
+            
+            # Enhance contrast for better QR detection
+            gray = cv2.equalizeHist(gray)
+            
+            # Detect and decode
+            data, points, _ = self._qr_detector.detectAndDecode(gray)
+            
+            if data:
+                try:
+                    parsed = json.loads(data)
+                    if parsed.get('type') == 'flight_ticket':
+                        logger.info(f"OpenCV decoded QR: ticket {parsed.get('ticket')}")
+                        return parsed
+                except json.JSONDecodeError:
+                    # Try parsing as simple ticket number
+                    if data.startswith('TK-'):
+                        return {'type': 'flight_ticket', 'ticket': data}
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"OpenCV QR decode error: {e}")
+            return None
+    
+    def _decode_with_pyzbar(self, image) -> Optional[Dict]:
+        """Decode QR using pyzbar library."""
         try:
             # Convert to grayscale for better detection
             if len(image.shape) == 3:
@@ -125,16 +197,18 @@ class QRService:
                     try:
                         data = json.loads(obj.data.decode('utf-8'))
                         if data.get('type') == 'flight_ticket':
-                            logger.info(f"Decoded QR: ticket {data.get('ticket')}")
+                            logger.info(f"pyzbar decoded QR: ticket {data.get('ticket')}")
                             return data
                     except json.JSONDecodeError:
-                        # Not a valid JSON QR code
-                        continue
+                        # Try parsing as simple ticket number
+                        text = obj.data.decode('utf-8')
+                        if text.startswith('TK-'):
+                            return {'type': 'flight_ticket', 'ticket': text}
             
             return None
             
         except Exception as e:
-            logger.error(f"Failed to decode QR: {e}")
+            logger.debug(f"pyzbar QR decode error: {e}")
             return None
     
     def get_qr_bounds(self, image) -> Optional[Tuple[int, int, int, int]]:
@@ -147,7 +221,7 @@ class QRService:
         Returns:
             Tuple of (x, y, width, height) or None if no QR found
         """
-        if not HAS_PYZBAR:
+        if not HAS_OPENCV:
             return None
         
         try:
@@ -156,24 +230,38 @@ class QRService:
             else:
                 gray = image
             
-            decoded_objects = pyzbar.decode(gray)
+            # Try OpenCV detector
+            if HAS_OPENCV_QR and self._qr_detector is not None:
+                _, points, _ = self._qr_detector.detectAndDecode(gray)
+                if points is not None and len(points) > 0:
+                    pts = points[0]
+                    x = int(min(pts[:, 0]))
+                    y = int(min(pts[:, 1]))
+                    w = int(max(pts[:, 0]) - x)
+                    h = int(max(pts[:, 1]) - y)
+                    return (x, y, w, h)
             
-            for obj in decoded_objects:
-                if obj.type == 'QRCODE':
-                    rect = obj.rect
-                    return (rect.left, rect.top, rect.width, rect.height)
+            # Try pyzbar
+            if HAS_PYZBAR:
+                decoded_objects = pyzbar.decode(gray)
+                for obj in decoded_objects:
+                    if obj.type == 'QRCODE':
+                        rect = obj.rect
+                        return (rect.left, rect.top, rect.width, rect.height)
             
             return None
             
         except Exception as e:
-            logger.error(f"Failed to get QR bounds: {e}")
+            logger.debug(f"Failed to get QR bounds: {e}")
             return None
     
     def is_available(self) -> Dict[str, bool]:
         """Check which QR features are available."""
         return {
             'generation': HAS_QRCODE,
-            'scanning': HAS_PYZBAR
+            'scanning': HAS_OPENCV_QR or HAS_PYZBAR,
+            'opencv_scanner': HAS_OPENCV_QR,
+            'pyzbar_scanner': HAS_PYZBAR
         }
 
 
