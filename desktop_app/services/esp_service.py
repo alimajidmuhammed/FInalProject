@@ -313,10 +313,14 @@ class ESPService:
         """Play error buzzer."""
         return self.send_command(ESPCommand.BUZZER_ERROR)
     
-    def on_checkin_success(self) -> bool:
+    def on_checkin_success(self, use_blue: bool = False) -> bool:
         """Perform all success actions (LED + gate + buzzer)."""
         success = True
-        success &= self.led_success()
+        if use_blue:
+            success &= self.led_scanning() # Blue
+        else:
+            success &= self.led_success()  # Green
+            
         success &= self.buzzer_success()
         success &= self.open_gate()
         return success

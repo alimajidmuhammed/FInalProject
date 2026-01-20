@@ -333,12 +333,7 @@ class CheckInView(ctk.CTkFrame):
                 esp_service.led_off()
                 self._last_led_state = "off"
             return
-        
-        # Face detected -> Blue (Scanning)
-        if self._last_led_state != "scanning":
-            esp_service.led_scanning()
-            self._last_led_state = "scanning"
-        
+            
         # Try to recognize
         result = face_service.recognize_face(frame, self.known_encodings)
         
@@ -348,14 +343,13 @@ class CheckInView(ctk.CTkFrame):
             # Avoid repeated triggers for same person
             if passenger_id == self.last_recognized_id:
                 return
-            
+                
             self.last_recognized_id = passenger_id
             self._on_passenger_recognized(passenger_id, confidence)
         else:
             # Face found but not recognized -> Red (Error/Unknown)
-            # Only trigger red if we haven't just triggered it (to avoid flickering)
             if self._last_led_state != "error":
-                esp_service.on_checkin_failure()
+                esp_service.led_error() # Red
                 self._last_led_state = "error"
                 
                 # Optional: Show unknown message on UI
@@ -421,6 +415,7 @@ class CheckInView(ctk.CTkFrame):
             checked_ticket = db.check_in_ticket(ticket.id)
             if checked_ticket:
                 sound_service.play_success()
+                esp_service.on_checkin_success() # Open gate, LED, buzzer
                 audit_service.log_checkin(checked_ticket.ticket_number, passenger.full_name, True)
                 self._show_boarding_pass(passenger, checked_ticket)
             self.after(5000, self._reset_recognition)
@@ -467,6 +462,7 @@ class CheckInView(ctk.CTkFrame):
             
             if checked_ticket:
                 sound_service.play_success()
+                esp_service.on_checkin_success(use_blue=True) # Open gate, BLUE LED, buzzer
                 audit_service.log_checkin(checked_ticket.ticket_number, passenger.full_name, True)
                 self._show_boarding_pass(passenger, checked_ticket)
                 
