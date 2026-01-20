@@ -1,9 +1,10 @@
 """
-Check-In View - Face recognition based check-in.
-Automatically recognizes faces and generates boarding passes.
+Check-In View - Face recognition and QR code based check-in.
+Automatically recognizes faces or scans QR codes and generates boarding passes.
 """
 from typing import Optional, Dict
 import customtkinter as ctk
+import logging
 
 from gui.theme import COLORS, FONTS, RADIUS, SPACING
 from gui.components.camera_widget import CameraWidget
@@ -15,6 +16,10 @@ from services.boarding_pass_service import boarding_pass_service
 from services.esp_service import esp_service
 from services.sound_service import sound_service
 from services.audit_service import audit_service
+from services.qr_service import qr_service
+from services.i18n_service import i18n, t
+
+logger = logging.getLogger(__name__)
 
 
 class CheckInView(ctk.CTkFrame):
@@ -29,9 +34,12 @@ class CheckInView(ctk.CTkFrame):
         self.known_encodings: Dict = {}
         self.passenger_lookup: Dict = {}  # passenger_id -> passenger
         self.last_recognized_id: Optional[int] = None
-        self.last_recognized_id: Optional[int] = None
         self.is_processing = False
         self._last_led_state = None  # Track state to avoid spamming serial
+        
+        # Check-in mode: 'face' or 'qr'
+        self.checkin_mode = 'face'
+        self._qr_scanning = False
         
         self._setup_ui()
     
@@ -62,19 +70,53 @@ class CheckInView(ctk.CTkFrame):
         header = ctk.CTkFrame(parent, fg_color="transparent")
         header.pack(fill="x", pady=(0, SPACING['lg']))
         
-        ctk.CTkLabel(
+        self.header_title = ctk.CTkLabel(
             header,
-            text="🛂 Self Check-In",
+            text="🛂 " + t('checkin.title'),
             font=FONTS['heading'],
             text_color=COLORS['text_primary']
-        ).pack(anchor="w")
+        )
+        self.header_title.pack(anchor="w")
         
-        ctk.CTkLabel(
+        self.header_subtitle = ctk.CTkLabel(
             header,
-            text="Look at the camera for automatic check-in",
+            text=t('checkin.subtitle'),
             font=FONTS['body'],
             text_color=COLORS['text_secondary']
-        ).pack(anchor="w", pady=(SPACING['xs'], 0))
+        )
+        self.header_subtitle.pack(anchor="w", pady=(SPACING['xs'], 0))
+        
+        # Mode toggle frame
+        mode_frame = ctk.CTkFrame(header, fg_color="transparent")
+        mode_frame.pack(anchor="w", pady=SPACING['md'])
+        
+        self.face_mode_btn = ctk.CTkButton(
+            mode_frame,
+            text="👤 " + t('checkin.faceRecognition'),
+            font=FONTS['body'],
+            fg_color=COLORS['accent'],
+            hover_color=COLORS['accent_hover'],
+            text_color=COLORS['bg_primary'],
+            corner_radius=RADIUS['md'],
+            width=180,
+            height=40,
+            command=lambda: self._set_mode('face')
+        )
+        self.face_mode_btn.pack(side="left", padx=(0, SPACING['sm']))
+        
+        self.qr_mode_btn = ctk.CTkButton(
+            mode_frame,
+            text="📱 " + t('checkin.qrCode'),
+            font=FONTS['body'],
+            fg_color=COLORS['bg_card'],
+            hover_color=COLORS['bg_hover'],
+            text_color=COLORS['text_primary'],
+            corner_radius=RADIUS['md'],
+            width=180,
+            height=40,
+            command=lambda: self._set_mode('qr')
+        )
+        self.qr_mode_btn.pack(side="left")
         
         # Camera frame
         camera_container = ctk.CTkFrame(
@@ -107,12 +149,13 @@ class CheckInView(ctk.CTkFrame):
         manual_frame = ctk.CTkFrame(parent, fg_color="transparent")
         manual_frame.pack(fill="x", pady=SPACING['md'])
         
-        ctk.CTkLabel(
+        self.manual_label = ctk.CTkLabel(
             manual_frame,
             text="Or check in with ticket number:",
             font=FONTS['body_small'],
             text_color=COLORS['text_secondary']
-        ).pack(side="left")
+        )
+        self.manual_label.pack(side="left")
         
         self.ticket_entry = ctk.CTkEntry(
             manual_frame,
@@ -127,16 +170,52 @@ class CheckInView(ctk.CTkFrame):
         )
         self.ticket_entry.pack(side="left", padx=SPACING['md'])
         
-        ctk.CTkButton(
+        self.manual_checkin_btn = ctk.CTkButton(
             manual_frame,
-            text="Check In",
+            text=t('nav.checkin'),
             font=FONTS['button'],
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
             height=40,
             width=100,
             command=self._manual_checkin
-        ).pack(side="left")
+        )
+        self.manual_checkin_btn.pack(side="left")
+    
+    def _set_mode(self, mode: str):
+        """Switch between face recognition and QR code mode."""
+        self.checkin_mode = mode
+        
+        if mode == 'face':
+            self.face_mode_btn.configure(
+                fg_color=COLORS['accent'],
+                text_color=COLORS['bg_primary']
+            )
+            self.qr_mode_btn.configure(
+                fg_color=COLORS['bg_card'],
+                text_color=COLORS['text_primary']
+            )
+            self.recognition_label.configure(
+                text="● " + t('checkin.lookAtCamera'),
+                text_color=COLORS['warning']
+            )
+            self._qr_scanning = False
+        else:  # qr mode
+            self.qr_mode_btn.configure(
+                fg_color=COLORS['accent'],
+                text_color=COLORS['bg_primary']
+            )
+            self.face_mode_btn.configure(
+                fg_color=COLORS['bg_card'],
+                text_color=COLORS['text_primary']
+            )
+            self.recognition_label.configure(
+                text="● " + t('checkin.holdQR'),
+                text_color=COLORS['info']
+            )
+            self._qr_scanning = True
+        
+        logger.info(f"Check-in mode changed to: {mode}")
     
     def _setup_status_panel(self, parent):
         """Setup the status/boarding pass panel."""
@@ -233,8 +312,18 @@ class CheckInView(ctk.CTkFrame):
         print(f"Loaded {len(self.known_encodings)} face encodings")
     
     def _on_faces_detected(self, faces):
-        """Handle face detection - try to recognize."""
+        """Handle face detection - try to recognize or scan QR."""
         if self.is_processing:
+            return
+        
+        # Get current frame for recognition/QR scanning
+        frame = self.camera.capture_now()
+        if frame is None:
+            return
+        
+        # QR Mode - scan for QR codes
+        if self._qr_scanning:
+            self._scan_qr_code(frame)
             return
             
         if not faces:
@@ -248,11 +337,6 @@ class CheckInView(ctk.CTkFrame):
         if self._last_led_state != "scanning":
             esp_service.led_scanning()
             self._last_led_state = "scanning"
-        
-        # Get current frame for recognition
-        frame = self.camera.capture_now()
-        if frame is None:
-            return
         
         # Try to recognize
         result = face_service.recognize_face(frame, self.known_encodings)
@@ -275,9 +359,77 @@ class CheckInView(ctk.CTkFrame):
                 
                 # Optional: Show unknown message on UI
                 self.recognition_label.configure(
-                    text="● Face not recognized",
+                    text="● " + t('checkin.notRecognized'),
                     text_color=COLORS['error']
                 )
+    
+    def _scan_qr_code(self, frame):
+        """Scan frame for QR codes."""
+        try:
+            qr_data = qr_service.decode_qr_from_image(frame)
+            
+            if qr_data and qr_data.get('type') == 'flight_ticket':
+                ticket_number = qr_data.get('ticket')
+                
+                if ticket_number:
+                    # Avoid repeated triggers
+                    if hasattr(self, '_last_qr_ticket') and self._last_qr_ticket == ticket_number:
+                        return
+                    
+                    self._last_qr_ticket = ticket_number
+                    logger.info(f"QR Code detected: {ticket_number}")
+                    
+                    # Show scanning indicator
+                    self.recognition_label.configure(
+                        text="● " + t('checkin.processing'),
+                        text_color=COLORS['accent']
+                    )
+                    
+                    # Process check-in
+                    self.after(100, lambda: self._process_qr_checkin(ticket_number))
+        except Exception as e:
+            logger.error(f"QR scan error: {e}")
+    
+    def _process_qr_checkin(self, ticket_number: str):
+        """Process check-in from QR code."""
+        ticket = db.get_ticket_by_number(ticket_number)
+        
+        if not ticket:
+            self.recognition_label.configure(
+                text="● Ticket not found",
+                text_color=COLORS['error']
+            )
+            sound_service.play_warning()
+            self.after(3000, lambda: self._reset_qr_state())
+            return
+        
+        if ticket.status != TicketStatus.BOOKED:
+            self.recognition_label.configure(
+                text=f"● Ticket already {ticket.status.value}",
+                text_color=COLORS['warning']
+            )
+            self.after(3000, lambda: self._reset_qr_state())
+            return
+        
+        # Get passenger and process check-in
+        passenger = db.get_passenger_by_id(ticket.passenger_id)
+        
+        if passenger:
+            self.is_processing = True
+            checked_ticket = db.check_in_ticket(ticket.id)
+            if checked_ticket:
+                sound_service.play_success()
+                audit_service.log_checkin(checked_ticket.ticket_number, passenger.full_name, True)
+                self._show_boarding_pass(passenger, checked_ticket)
+            self.after(5000, self._reset_recognition)
+    
+    def _reset_qr_state(self):
+        """Reset QR scanning state."""
+        self._last_qr_ticket = None
+        self.recognition_label.configure(
+            text="● " + t('checkin.holdQR'),
+            text_color=COLORS['info']
+        )
     
     def _on_passenger_recognized(self, passenger_id: int, confidence: float):
         """Handle successful passenger recognition."""
@@ -490,3 +642,11 @@ class CheckInView(ctk.CTkFrame):
         """Called when view is hidden."""
         self.camera.stop()
         voice_service.stop()
+    
+    def refresh_language(self):
+        """Refresh UI text for language change."""
+        self.header_title.configure(text="🛂 " + t('checkin.title'))
+        self.header_subtitle.configure(text=t('checkin.subtitle'))
+        self.face_mode_btn.configure(text="👤 " + t('checkin.faceRecognition'))
+        self.qr_mode_btn.configure(text="📱 " + t('checkin.qrCode'))
+        self._set_mode(self.checkin_mode)  # Refresh mode labels

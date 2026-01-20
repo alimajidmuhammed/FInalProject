@@ -1,10 +1,12 @@
 """
 Theme configuration for the Flight Kiosk GUI.
-Supports both dark and light themes with cyan accents.
+Supports dark, light, and high contrast themes with accessibility features.
 """
 
 # Current theme mode
 _current_mode = "dark"
+_accessibility_mode = False
+_large_text = False
 
 # Dark theme colors
 DARK_COLORS = {
@@ -66,10 +68,40 @@ LIGHT_COLORS = {
     'border_light': '#d8dee4',    # Even lighter border
 }
 
+# High contrast theme for accessibility
+HIGH_CONTRAST_COLORS = {
+    # Backgrounds
+    'bg_primary': '#000000',      # Pure black
+    'bg_secondary': '#000000',    # Pure black
+    'bg_card': '#1a1a1a',         # Very dark gray
+    'bg_input': '#1a1a1a',        # Very dark gray
+    'bg_hover': '#333333',        # Dark gray
+    
+    # Accents - bright and saturated
+    'accent': '#00ffff',          # Bright cyan
+    'accent_hover': '#00cccc',    # Slightly darker cyan
+    'accent_light': '#66ffff',    # Light cyan
+    
+    # Status colors - maximum contrast
+    'success': '#00ff00',         # Bright green
+    'warning': '#ffff00',         # Bright yellow
+    'error': '#ff0000',           # Bright red
+    'info': '#00aaff',            # Bright blue
+    
+    # Text - maximum contrast
+    'text_primary': '#ffffff',    # Pure white
+    'text_secondary': '#ffffff',  # Pure white (higher contrast)
+    'text_muted': '#cccccc',      # Light gray
+    
+    # Borders - high visibility
+    'border': '#ffffff',          # White borders
+    'border_light': '#cccccc',    # Light gray borders
+}
+
 # Active colors (defaults to dark)
 COLORS = DARK_COLORS.copy()
 
-# Font configuration
+# Standard font configuration
 FONTS = {
     'heading_large': ('Segoe UI Display', 40, 'bold'),
     'heading': ('Segoe UI Display', 28, 'bold'),
@@ -82,6 +114,22 @@ FONTS = {
     'code': ('Consolas', 12),
 }
 
+# Large font configuration for accessibility
+LARGE_FONTS = {
+    'heading_large': ('Segoe UI Display', 52, 'bold'),
+    'heading': ('Segoe UI Display', 36, 'bold'),
+    'subheading': ('Segoe UI', 26, 'bold'),
+    'body_large': ('Segoe UI', 24),
+    'body': ('Segoe UI', 20),
+    'body_small': ('Segoe UI', 18),
+    'caption': ('Segoe UI', 16),
+    'button': ('Segoe UI', 20, 'bold'),
+    'code': ('Consolas', 16),
+}
+
+# Store reference to current fonts
+_current_fonts = FONTS
+
 # Spacing
 SPACING = {
     'xs': 4,
@@ -91,6 +139,17 @@ SPACING = {
     'xl': 32,
     'xxl': 48,
     '3xl': 64,
+}
+
+# Large spacing for accessibility
+LARGE_SPACING = {
+    'xs': 8,
+    'sm': 12,
+    'md': 24,
+    'lg': 32,
+    'xl': 48,
+    'xxl': 64,
+    '3xl': 80,
 }
 
 # Border radius
@@ -120,7 +179,7 @@ def set_theme_mode(mode: str):
     """Set the theme mode and update COLORS."""
     global _current_mode, COLORS
     
-    if mode not in ("dark", "light"):
+    if mode not in ("dark", "light", "high_contrast"):
         mode = "dark"
     
     _current_mode = mode
@@ -128,9 +187,12 @@ def set_theme_mode(mode: str):
     if mode == "dark":
         COLORS.clear()
         COLORS.update(DARK_COLORS)
-    else:
+    elif mode == "light":
         COLORS.clear()
         COLORS.update(LIGHT_COLORS)
+    elif mode == "high_contrast":
+        COLORS.clear()
+        COLORS.update(HIGH_CONTRAST_COLORS)
 
 
 def toggle_theme() -> str:
@@ -142,5 +204,62 @@ def toggle_theme() -> str:
 
 def apply_theme(ctk):
     """Apply custom theme to CustomTkinter."""
-    ctk.set_appearance_mode(_current_mode)
+    ctk.set_appearance_mode(_current_mode if _current_mode != "high_contrast" else "dark")
     ctk.set_default_color_theme("blue")
+
+
+def is_accessibility_mode() -> bool:
+    """Check if accessibility mode is enabled."""
+    return _accessibility_mode
+
+
+def set_accessibility_mode(enabled: bool):
+    """Enable or disable accessibility mode."""
+    global _accessibility_mode, COLORS
+    _accessibility_mode = enabled
+    
+    if enabled:
+        set_theme_mode("high_contrast")
+    else:
+        set_theme_mode("dark")
+
+
+def is_large_text() -> bool:
+    """Check if large text mode is enabled."""
+    return _large_text
+
+
+def set_large_text(enabled: bool):
+    """Enable or disable large text mode."""
+    global _large_text, FONTS, _current_fonts
+    _large_text = enabled
+    
+    if enabled:
+        _current_fonts = LARGE_FONTS
+        FONTS.clear()
+        FONTS.update(LARGE_FONTS)
+    else:
+        _current_fonts = FONTS
+        # Restore default fonts
+        FONTS.clear()
+        FONTS.update({
+            'heading_large': ('Segoe UI Display', 40, 'bold'),
+            'heading': ('Segoe UI Display', 28, 'bold'),
+            'subheading': ('Segoe UI', 20, 'bold'),
+            'body_large': ('Segoe UI', 18),
+            'body': ('Segoe UI', 15),
+            'body_small': ('Segoe UI', 13),
+            'caption': ('Segoe UI', 11),
+            'button': ('Segoe UI', 15, 'bold'),
+            'code': ('Consolas', 12),
+        })
+
+
+def get_current_fonts() -> dict:
+    """Get the current font configuration."""
+    return _current_fonts.copy()
+
+
+def get_touch_target_size() -> int:
+    """Get minimum touch target size for accessibility (48px recommended)."""
+    return 56 if _accessibility_mode else 44

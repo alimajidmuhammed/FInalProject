@@ -1,5 +1,6 @@
 """
 Flight Ticketing Kiosk System - Configuration
+Version 2.0 with multi-language and enhanced features
 """
 import os
 from pathlib import Path
@@ -18,6 +19,13 @@ DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 FACES_DIR = DATA_DIR / "faces"
 BOARDING_PASSES_DIR = DATA_DIR / "boarding_passes"
 
+# QR Code storage
+QR_CODES_DIR = DATA_DIR / "qr_codes"
+
+# Logs directory
+LOGS_DIR = DATA_DIR / "logs"
+REPORTS_DIR = DATA_DIR / "reports"
+
 # Encryption key file
 ENCRYPTION_KEY_FILE = DATA_DIR / ".encryption_key"
 
@@ -29,6 +37,11 @@ CAMERA_HEIGHT = 480
 # Face recognition settings
 FACE_MATCH_THRESHOLD = 0.45  # Lower = stricter (0.45 = 55% minimum confidence)
 FACE_STABILITY_FRAMES = 30  # Frames to wait before auto-capture
+
+# QR Code settings
+QR_CHECK_IN_ENABLED = True
+QR_BOX_SIZE = 10
+QR_BORDER = 4
 
 # ESP32 settings
 MQTT_BROKER = "localhost"  # Change to your MQTT broker IP
@@ -48,6 +61,30 @@ SESSION_TIMEOUT_SECONDS = 120  # 2 minutes of inactivity before auto-reset
 
 # Admin settings
 ADMIN_PIN = "1234"  # PIN for admin functions like reset check-in
+
+# Security settings
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
+RATE_LIMIT_WINDOW_SECONDS = 60
+MAX_FACE_ATTEMPTS_PER_MINUTE = 10
+
+# Logging settings
+LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s"
+LOG_RETENTION_DAYS = 30
+LOG_MAX_SIZE_MB = 5
+LOG_BACKUP_COUNT = 5
+
+# Localization settings
+DEFAULT_LANGUAGE = "en"
+SUPPORTED_LANGUAGES = ["en", "ar", "ku"]
+LOCALES_DIR = BASE_DIR / "locales"
+
+# Accessibility settings
+ACCESSIBILITY_MODE = False
+HIGH_CONTRAST = False
+LARGE_TEXT = False
+VOICE_GUIDANCE = True
 
 # Sound settings
 SOUNDS_DIR = ASSETS_DIR / "sounds"
@@ -74,5 +111,9 @@ def init_directories():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     FACES_DIR.mkdir(parents=True, exist_ok=True)
     BOARDING_PASSES_DIR.mkdir(parents=True, exist_ok=True)
+    QR_CODES_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
+    LOCALES_DIR.mkdir(parents=True, exist_ok=True)
