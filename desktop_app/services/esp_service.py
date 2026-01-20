@@ -315,14 +315,28 @@ class ESPService:
         is_now_connected = False
         
         if self.connection_type == 'mqtt' and self.mqtt_client:
+            # Check if client is still connected to broker
             is_now_connected = self.mqtt_client.is_connected()
         elif self.connection_type == 'serial' and self.serial_conn:
-            is_now_connected = self.serial_conn.is_open
+            # Check if port still exists in system
+            try:
+                available_ports = [p.device for p in serial.tools.list_ports.comports()]
+                is_now_connected = self.serial_conn.is_open and self.serial_conn.port in available_ports
+            except Exception:
+                is_now_connected = False
             
         if was_connected != is_now_connected:
+            logger.info(f"ESP connection state changed: {was_connected} -> {is_now_connected}")
             self._notify_connection_change(is_now_connected)
             if not is_now_connected:
                 self.connection_type = None
+                # If we lost serial, close it properly
+                if self.serial_conn:
+                    try:
+                        self.serial_conn.close()
+                    except:
+                        pass
+                    self.serial_conn = None
                 
         return is_now_connected
 

@@ -103,6 +103,7 @@ class App(ctk.CTk):
             
     def _esp_watchdog(self):
         """Periodically verify ESP connection status."""
+        logger.debug("ESP Watchdog checking connection...")
         esp_service.check_connection()
         # Run every 5 seconds
         self.after(5000, self._esp_watchdog)
