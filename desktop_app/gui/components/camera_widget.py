@@ -43,6 +43,11 @@ class CameraWidget(ctk.CTkFrame):
         self._stable_face_frames = 0
         self._capture_thread: Optional[threading.Thread] = None
         
+        # QR Mode attributes
+        self.qr_mode = False
+        self.qr_detections: Optional[tuple] = None  # (x, y, w, h)
+        self.qr_success = False  # To turn box green
+        
         self._setup_ui()
     
     def _setup_ui(self):
@@ -137,8 +142,17 @@ class CameraWidget(ctk.CTkFrame):
                 face_count = len(self.detected_faces)
                 self.face_count_label.configure(text=f"Faces: {face_count}")
                 
-                # Draw face boxes
-                if self.detected_faces:
+                # Draw QR box if in QR mode
+                if self.qr_mode:
+                    display_frame = frame.copy()
+                    if self.qr_detections:
+                        x, y, w, h = self.qr_detections
+                        # Yellow if detected but not success, Green if success
+                        color = (0, 255, 0) if self.qr_success else (0, 255, 255)
+                        cv2.rectangle(display_frame, (x, y), (x + w, y + h), color, 4)
+                
+                # Draw face boxes if detection enabled and not in QR mode
+                elif self.detected_faces:
                     display_frame = face_service.draw_face_boxes(
                         frame, 
                         self.detected_faces,
@@ -176,7 +190,7 @@ class CameraWidget(ctk.CTkFrame):
                 else:
                     display_frame = frame
                     self._stable_face_frames = 0
-                    if self.auto_capture:
+                    if self.auto_capture and not self.qr_mode:
                         self.status_label.configure(
                             text="● Looking for face...",
                             text_color=COLORS['warning']
@@ -250,3 +264,14 @@ class CameraWidget(ctk.CTkFrame):
     def has_face(self) -> bool:
         """Check if at least one face is detected."""
         return len(self.detected_faces) > 0
+
+    def set_qr_mode(self, enabled: bool):
+        """Set QR scanning mode."""
+        self.qr_mode = enabled
+        self.qr_detections = None
+        self.qr_success = False
+
+    def set_qr_detections(self, detections: Optional[tuple], success: bool = False):
+        """Update QR code bounding box and status."""
+        self.qr_detections = detections
+        self.qr_success = success

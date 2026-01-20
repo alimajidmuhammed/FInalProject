@@ -8,7 +8,7 @@ import logging
 
 from gui.theme import COLORS, FONTS, SPACING, RADIUS
 from services.stats_service import stats_service
-from services.i18n_service import i18n, t
+from services.esp_service import esp_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,12 @@ class StatsView(ctk.CTkFrame):
         super().__init__(parent, fg_color=COLORS['bg_primary'])
         
         self.show_overlay = show_overlay_callback
+        self.esp_status_label = None
+        
         self._setup_ui()
         
-        # Listen for language changes
-        i18n.add_listener(self._on_language_change)
+        # Register for ESP status updates
+        esp_service.register_connection_callback(self._on_esp_connection_change)
     
     def _setup_ui(self):
         """Setup the UI layout."""
@@ -47,7 +49,7 @@ class StatsView(ctk.CTkFrame):
         # Title
         self.title_label = ctk.CTkLabel(
             header_frame,
-            text=t('stats.title'),
+            text="Statistics Dashboard",
             font=FONTS['heading'],
             text_color=COLORS['text_primary']
         )
@@ -56,7 +58,7 @@ class StatsView(ctk.CTkFrame):
         # Refresh button
         refresh_btn = ctk.CTkButton(
             header_frame,
-            text="🔄 " + t('app.retry'),
+            text="🔄 Refresh",
             font=FONTS['body'],
             fg_color=COLORS['bg_card'],
             hover_color=COLORS['bg_hover'],
@@ -70,7 +72,7 @@ class StatsView(ctk.CTkFrame):
         # Export button
         export_btn = ctk.CTkButton(
             header_frame,
-            text="📊 " + t('stats.exportReport'),
+            text="📊 Export Report",
             font=FONTS['body'],
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
@@ -106,25 +108,25 @@ class StatsView(ctk.CTkFrame):
         
         cards_data = [
             {
-                'title': t('stats.totalBookings'),
+                'title': "Total Bookings",
                 'value': str(stats.get('bookings', 0)),
                 'icon': '📦',
                 'color': COLORS['accent']
             },
             {
-                'title': t('stats.totalCheckIns'),
+                'title': "Total Check-ins",
                 'value': str(stats.get('checkins', 0)),
                 'icon': '✅',
                 'color': COLORS['success']
             },
             {
-                'title': t('stats.totalCancellations'),
+                'title': "Total Cancellations",
                 'value': str(stats.get('cancellations', 0)),
                 'icon': '❌',
                 'color': COLORS['error']
             },
             {
-                'title': 'Resets',
+                'title': 'Total Resets',
                 'value': str(stats.get('resets', 0)),
                 'icon': '🔄',
                 'color': COLORS['warning']
@@ -213,10 +215,10 @@ class StatsView(ctk.CTkFrame):
         
         # Period buttons
         periods = [
-            ('today', t('stats.today')),
-            ('week', t('stats.thisWeek')),
-            ('month', t('stats.thisMonth')),
-            ('all', t('stats.allTime'))
+            ('today', "Today"),
+            ('week', "This Week"),
+            ('month', "This Month"),
+            ('all', "All-time")
         ]
         
         self.period_buttons = {}
@@ -260,7 +262,7 @@ class StatsView(ctk.CTkFrame):
         all_stats = stats_service.get_all_time_stats()
         
         # Header row
-        headers = ['Metric', t('stats.today'), t('stats.thisWeek'), t('stats.thisMonth'), t('stats.allTime')]
+        headers = ['Metric', "Today", "This Week", "This Month", "All-time"]
         for i, header in enumerate(headers):
             label = ctk.CTkLabel(
                 self.table_frame,
@@ -319,7 +321,7 @@ class StatsView(ctk.CTkFrame):
         
         routes_title = ctk.CTkLabel(
             routes_frame,
-            text=f"🛫 {t('stats.popularRoutes')}",
+            text="🛫 Popular Routes",
             font=FONTS['subheading'],
             text_color=COLORS['text_primary']
         )
@@ -370,7 +372,7 @@ class StatsView(ctk.CTkFrame):
         
         health_title = ctk.CTkLabel(
             health_frame,
-            text=f"💚 {t('stats.systemHealth')}",
+            text="💚 System Health",
             font=FONTS['subheading'],
             text_color=COLORS['text_primary']
         )
@@ -385,19 +387,22 @@ class StatsView(ctk.CTkFrame):
         
         esp_label = ctk.CTkLabel(
             esp_row,
-            text=t('stats.espStatus'),
+            text="ESP32 Connection",
             font=FONTS['body'],
             text_color=COLORS['text_primary']
         )
         esp_label.pack(side="left")
         
-        esp_status = ctk.CTkLabel(
+        self.esp_health_label = ctk.CTkLabel(
             esp_row,
-            text=f"{'🟢 ' + t('stats.connected') if esp_connected else '🔴 ' + t('stats.disconnected')}",
+            text="Checking...",
             font=FONTS['body'],
-            text_color=COLORS['success'] if esp_connected else COLORS['error']
+            text_color=COLORS['warning']
         )
-        esp_status.pack(side="right")
+        self.esp_health_label.pack(side="right")
+        
+        # Initial update
+        self._on_esp_connection_change(esp_service.is_connected)
         
         # Database info
         try:
@@ -505,12 +510,21 @@ class StatsView(ctk.CTkFrame):
         else:
             logger.error("Failed to export report")
     
-    def _on_language_change(self, lang_code: str):
-        """Handle language change."""
-        self.title_label.configure(text=t('stats.title'))
-        # Could refresh more labels here
-    
+    def _on_esp_connection_change(self, is_connected: bool):
+        """Handle real-time ESP connection updates."""
+        if hasattr(self, 'esp_health_label') and self.esp_health_label:
+            if is_connected:
+                self.esp_health_label.configure(
+                    text="🟢 Connected",
+                    text_color=COLORS['success']
+                )
+            else:
+                self.esp_health_label.configure(
+                    text="🔴 Disconnected",
+                    text_color=COLORS['error']
+                )
+
     def destroy(self):
         """Cleanup when destroyed."""
-        i18n.remove_listener(self._on_language_change)
+        esp_service.unregister_connection_callback(self._on_esp_connection_change)
         super().destroy()

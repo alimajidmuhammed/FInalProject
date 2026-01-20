@@ -50,20 +50,35 @@ class ESPService:
         self.is_connected = False
         self.connection_type: Optional[str] = None  # 'mqtt' or 'serial'
         self._status_callback: Optional[Callable] = None
-        self._connection_callback: Optional[Callable] = None
+        self._connection_callbacks: List[Callable] = []
         self._reconnect_thread: Optional[threading.Thread] = None
         self._should_reconnect = False
 
+    def register_connection_callback(self, callback: Callable):
+        """Register a callback for connection state changes (is_connected: bool)."""
+        if callback not in self._connection_callbacks:
+            self._connection_callbacks.append(callback)
+            # Immediately notify with current state
+            try:
+                callback(self.is_connected)
+            except Exception as e:
+                print(f"Error in initial connection callback: {e}")
+
+    def unregister_connection_callback(self, callback: Callable):
+        """Unregister a connection callback."""
+        if callback in self._connection_callbacks:
+            self._connection_callbacks.remove(callback)
+
     def set_connection_callback(self, callback: Callable):
-        """Set callback for connection state changes (connected: bool)."""
-        self._connection_callback = callback
+        """Legacy support for set_connection_callback."""
+        self.register_connection_callback(callback)
     
     def _notify_connection_change(self, is_connected: bool):
-        """Notify listener of connection change."""
+        """Notify all listeners of connection change."""
         self.is_connected = is_connected
-        if self._connection_callback:
+        for callback in self._connection_callbacks:
             try:
-                self._connection_callback(is_connected)
+                callback(is_connected)
             except Exception as e:
                 print(f"Error in connection callback: {e}")
     
