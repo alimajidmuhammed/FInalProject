@@ -29,7 +29,9 @@ class CheckInView(ctk.CTkFrame):
         self.known_encodings: Dict = {}
         self.passenger_lookup: Dict = {}  # passenger_id -> passenger
         self.last_recognized_id: Optional[int] = None
+        self.last_recognized_id: Optional[int] = None
         self.is_processing = False
+        self._last_led_state = None  # Track state to avoid spamming serial
         
         self._setup_ui()
     
@@ -115,11 +117,13 @@ class CheckInView(ctk.CTkFrame):
         self.ticket_entry = ctk.CTkEntry(
             manual_frame,
             placeholder_text="TK-XXXXXX",
-            font=FONTS['body'],
-            width=150,
-            height=40,
+            font=FONTS['body_large'],
+            width=300,
+            height=55,
             fg_color=COLORS['bg_input'],
-            border_color=COLORS['border']
+            border_color=COLORS['border'],
+            border_width=2,
+            corner_radius=RADIUS['full']
         )
         self.ticket_entry.pack(side="left", padx=SPACING['md'])
         
@@ -230,8 +234,20 @@ class CheckInView(ctk.CTkFrame):
     
     def _on_faces_detected(self, faces):
         """Handle face detection - try to recognize."""
-        if self.is_processing or not faces:
+        if self.is_processing:
             return
+            
+        if not faces:
+            # No face -> LED Off
+            if self._last_led_state != "off":
+                esp_service.led_off()
+                self._last_led_state = "off"
+            return
+        
+        # Face detected -> Blue (Scanning)
+        if self._last_led_state != "scanning":
+            esp_service.led_scanning()
+            self._last_led_state = "scanning"
         
         # Get current frame for recognition
         frame = self.camera.capture_now()
@@ -250,6 +266,18 @@ class CheckInView(ctk.CTkFrame):
             
             self.last_recognized_id = passenger_id
             self._on_passenger_recognized(passenger_id, confidence)
+        else:
+            # Face found but not recognized -> Red (Error/Unknown)
+            # Only trigger red if we haven't just triggered it (to avoid flickering)
+            if self._last_led_state != "error":
+                esp_service.on_checkin_failure()
+                self._last_led_state = "error"
+                
+                # Optional: Show unknown message on UI
+                self.recognition_label.configure(
+                    text="● Face not recognized",
+                    text_color=COLORS['error']
+                )
     
     def _on_passenger_recognized(self, passenger_id: int, confidence: float):
         """Handle successful passenger recognition."""
@@ -384,6 +412,8 @@ class CheckInView(ctk.CTkFrame):
         """Reset recognition state."""
         self.is_processing = False
         self.last_recognized_id = None
+        self._last_led_state = None
+        esp_service.led_off()
         
         # Reset UI after delay
         self.after(10000, self._reset_ui)
@@ -450,6 +480,7 @@ class CheckInView(ctk.CTkFrame):
         self._load_face_encodings()
         self._reset_ui()
         self.camera.start()
+        self._last_led_state = None
         
         # Try to connect ESP
         if not esp_service.is_connected:

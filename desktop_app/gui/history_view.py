@@ -7,10 +7,13 @@ import customtkinter as ctk
 
 from gui.theme import COLORS, FONTS, RADIUS, SPACING
 from gui.components.ticket_card import TicketCard
-from gui.components.admin_dialog import require_admin_pin
+from gui.components.admin_modal import AdminPinModal
+from gui.components.modal_confirm import ModalConfirm
+from gui.components.modal_ticket_detail import ModalTicketDetail
 from database.db_manager import db
 from database.models import Ticket, TicketStatus
 from services.audit_service import audit_service
+from services.boarding_pass_service import boarding_pass_service
 
 
 class HistoryView(ctk.CTkFrame):
@@ -214,305 +217,88 @@ class HistoryView(ctk.CTkFrame):
     
     def _on_cancel_ticket(self, ticket: Ticket):
         """Handle ticket cancellation."""
-        # Confirm dialog
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Confirm Cancellation")
-        dialog.geometry("400x200")
-        dialog.configure(fg_color=COLORS['bg_secondary'])
-        dialog.transient(self)
+        app = self.master.master # HistoryView -> content -> App
         
-        # Center the dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() - 400) // 2
-        y = (dialog.winfo_screenheight() - 200) // 2
-        dialog.geometry(f"+{x}+{y}")
-        
-        # Wait for window to be visible before grabbing
-        dialog.wait_visibility()
-        dialog.grab_set()
-        
-        content = ctk.CTkFrame(dialog, fg_color="transparent")
-        content.pack(fill="both", expand=True, padx=SPACING['lg'], pady=SPACING['lg'])
-        
-        ctk.CTkLabel(
-            content,
-            text="Cancel Ticket?",
-            font=FONTS['subheading'],
-            text_color=COLORS['text_primary']
-        ).pack(pady=SPACING['sm'])
-        
-        ctk.CTkLabel(
-            content,
-            text=f"Are you sure you want to cancel ticket {ticket.ticket_number}?",
-            font=FONTS['body'],
-            text_color=COLORS['text_secondary']
-        ).pack(pady=SPACING['md'])
-        
-        btn_frame = ctk.CTkFrame(content, fg_color="transparent")
-        btn_frame.pack(fill="x", pady=SPACING['md'])
-        
-        def confirm():
+        def do_confirm():
             db.cancel_ticket(ticket.id)
-            dialog.destroy()
             self._load_tickets()
         
-        ctk.CTkButton(
-            btn_frame,
-            text="Keep Ticket",
-            font=FONTS['button'],
-            fg_color="transparent",
-            hover_color=COLORS['bg_hover'],
-            border_width=1,
-            border_color=COLORS['border'],
-            text_color=COLORS['text_primary'],
-            height=40,
-            command=dialog.destroy
-        ).pack(side="left", expand=True, padx=SPACING['xs'])
-        
-        ctk.CTkButton(
-            btn_frame,
-            text="Cancel Ticket",
-            font=FONTS['button'],
-            fg_color=COLORS['error'],
-            hover_color="#cc4242",
-            height=40,
-            command=confirm
-        ).pack(side="right", expand=True, padx=SPACING['xs'])
-    
+        app.show_overlay(
+            ModalConfirm,
+            title="Cancel Ticket?",
+            message=f"Are you sure you want to cancel ticket {ticket.ticket_number}?\nThis action cannot be undone.",
+            confirm_text="Cancel Ticket",
+            cancel_text="Keep Ticket",
+            confirm_color=COLORS['error'],
+            on_confirm=do_confirm
+        )
+
     def _show_ticket_detail(self, ticket: Ticket):
-        """Show ticket detail popup."""
+        """Show ticket detail popup in integrated overlay."""
         passenger = db.get_passenger_by_id(ticket.passenger_id)
+        app = self.master.master
         
-        dialog = ctk.CTkToplevel(self)
-        dialog.title(f"Ticket {ticket.ticket_number}")
-        dialog.geometry("700x600")
-        dialog.configure(fg_color=COLORS['bg_secondary'])
-        dialog.transient(self)
-        
-        # Center the dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() - 700) // 2
-        y = (dialog.winfo_screenheight() - 600) // 2
-        dialog.geometry(f"+{x}+{y}")
-        
-        # Wait for window to be visible before grabbing
-        dialog.wait_visibility()
-        dialog.grab_set()
-        
-        content = ctk.CTkFrame(dialog, fg_color="transparent")
-        content.pack(fill="both", expand=True, padx=SPACING['xl'], pady=SPACING['lg'])
-        
-        # Header
-        ctk.CTkLabel(
-            content,
-            text=ticket.ticket_number,
-            font=FONTS['heading'],
-            text_color=COLORS['accent']
-        ).pack(anchor="w")
-        
-        # Status
-        status_color = {
-            TicketStatus.BOOKED: COLORS['warning'],
-            TicketStatus.CHECKED_IN: COLORS['success'],
-            TicketStatus.CANCELLED: COLORS['error']
-        }.get(ticket.status, COLORS['text_muted'])
-        
-        ctk.CTkLabel(
-            content,
-            text=f"● {ticket.status.value.upper().replace('_', ' ')}",
-            font=FONTS['body'],
-            text_color=status_color
-        ).pack(anchor="w", pady=(SPACING['xs'], SPACING['lg']))
-        
-        # Route
-        route_frame = ctk.CTkFrame(content, fg_color=COLORS['bg_card'], corner_radius=RADIUS['lg'])
-        route_frame.pack(fill="x", pady=SPACING['md'])
-        
-        route_content = ctk.CTkFrame(route_frame, fg_color="transparent")
-        route_content.pack(padx=SPACING['lg'], pady=SPACING['md'])
-        
-        ctk.CTkLabel(
-            route_content,
-            text=f"{ticket.source_airport}  →  {ticket.destination_airport}",
-            font=("Segoe UI", 28, "bold"),
-            text_color=COLORS['text_primary']
-        ).pack()
-        
-        if ticket.source_airport_name:
-            ctk.CTkLabel(
-                route_content,
-                text=f"{ticket.source_airport_name} to {ticket.destination_airport_name}",
-                font=FONTS['body_small'],
-                text_color=COLORS['text_secondary']
-            ).pack()
-        
-        # Details grid
-        details_frame = ctk.CTkFrame(content, fg_color="transparent")
-        details_frame.pack(fill="x", pady=SPACING['lg'])
-        
-        details = [
-            ("Passenger", passenger.full_name if passenger else "Unknown"),
-            ("Passport", passenger.passport_number if passenger else "N/A"),
-            ("Date", str(ticket.flight_date)),
-            ("Time", ticket.flight_time.strftime("%H:%M") if ticket.flight_time else "TBD"),
-            ("Seat", ticket.seat_number or "Not assigned"),
-            ("Gate", ticket.gate or "Not assigned"),
-        ]
-        
-        for i, (label, value) in enumerate(details):
-            row = i // 2
-            col = i % 2
-            
-            frame = ctk.CTkFrame(details_frame, fg_color="transparent")
-            frame.grid(row=row, column=col, sticky="w", padx=SPACING['md'], pady=SPACING['xs'])
-            
-            ctk.CTkLabel(
-                frame,
-                text=label,
-                font=FONTS['caption'],
-                text_color=COLORS['text_muted']
-            ).pack(anchor="w")
-            
-            ctk.CTkLabel(
-                frame,
-                text=value,
-                font=FONTS['body'],
-                text_color=COLORS['text_primary']
-            ).pack(anchor="w")
-        
-        details_frame.grid_columnconfigure(0, weight=1)
-        details_frame.grid_columnconfigure(1, weight=1)
-        
-        # Action buttons frame
-        btn_frame = ctk.CTkFrame(content, fg_color="transparent")
-        btn_frame.pack(fill="x", pady=(SPACING['lg'], 0))
-        
-        # Reset Check-In button (only for checked-in tickets)
-        if ticket.status == TicketStatus.CHECKED_IN:
-            def do_reset():
+        def do_reset():
+            def confirmed():
                 db.reset_ticket_checkin(ticket.id)
                 audit_service.log_reset(ticket.ticket_number)
-                dialog.destroy()
+                app.hide_overlay()
                 self._load_tickets()
             
-            def reset_checkin():
-                # Require admin PIN
-                require_admin_pin(
-                    dialog,
-                    on_success=do_reset,
-                    title="Admin PIN Required"
-                )
+            app.show_overlay(AdminPinModal, on_success=confirmed, on_cancel=lambda: self._show_ticket_detail(ticket))
+
+        def confirm_delete():
+            def do_delete():
+                if passenger:
+                    db.delete_passenger(passenger.id)
+                    audit_service.log_delete(passenger.full_name, passenger.passport_number)
+                    app.hide_overlay()
+                    self._load_tickets()
             
-            ctk.CTkButton(
-                btn_frame,
-                text="🔄 Reset Check-In",
-                font=FONTS['button'],
-                fg_color=COLORS['warning'],
-                hover_color="#cc8800",
-                text_color=COLORS['bg_primary'],
-                height=45,
-                command=reset_checkin
-            ).pack(side="left", expand=True, fill="x", padx=(0, SPACING['sm']))
-        
-        # Delete Passenger button (admin protected)
-        def do_delete():
+            app.show_overlay(
+                ModalConfirm,
+                title="Delete Data?",
+                message=f"This will permanently delete all records for:\n{passenger.full_name if passenger else 'User'}",
+                confirm_text="Delete Permanently",
+                confirm_color=COLORS['error'],
+                on_confirm=lambda: app.show_overlay(AdminPinModal, on_success=do_delete, on_cancel=lambda: self._show_ticket_detail(ticket))
+            )
+
+        def print_ticket():
             if passenger:
-                db.delete_passenger(passenger.id)
-                audit_service.log_delete(passenger.full_name, passenger.passport_number)
-                dialog.destroy()
-                self._load_tickets()
-        
-        def delete_passenger():
-            # Show confirmation dialog first
-            confirm_dialog = ctk.CTkToplevel(dialog)
-            confirm_dialog.title("Confirm Delete")
-            confirm_dialog.geometry("450x220")
-            confirm_dialog.configure(fg_color=COLORS['bg_secondary'])
-            confirm_dialog.transient(dialog)
-            
-            # Center the dialog
-            confirm_dialog.update_idletasks()
-            x = (confirm_dialog.winfo_screenwidth() - 450) // 2
-            y = (confirm_dialog.winfo_screenheight() - 220) // 2
-            confirm_dialog.geometry(f"+{x}+{y}")
-            
-            confirm_dialog.wait_visibility()
-            confirm_dialog.grab_set()
-            
-            confirm_content = ctk.CTkFrame(confirm_dialog, fg_color="transparent")
-            confirm_content.pack(fill="both", expand=True, padx=SPACING['lg'], pady=SPACING['lg'])
-            
-            ctk.CTkLabel(
-                confirm_content,
-                text="⚠️ Delete Passenger?",
-                font=FONTS['subheading'],
-                text_color=COLORS['error']
-            ).pack(pady=SPACING['sm'])
-            
-            passenger_info = f"{passenger.full_name}\n({passenger.passport_number})" if passenger else "Unknown"
-            ctk.CTkLabel(
-                confirm_content,
-                text=f"This will permanently delete:\n{passenger_info}\n\nAll tickets for this passenger will also be deleted.",
-                font=FONTS['body'],
-                text_color=COLORS['text_secondary'],
-                justify="center"
-            ).pack(pady=SPACING['md'])
-            
-            confirm_btn_frame = ctk.CTkFrame(confirm_content, fg_color="transparent")
-            confirm_btn_frame.pack(fill="x", pady=SPACING['md'])
-            
-            def on_confirm():
-                confirm_dialog.destroy()
-                # Now require admin PIN
-                require_admin_pin(
-                    dialog,
-                    on_success=do_delete,
-                    title="Admin PIN Required"
+                ticket_path = boarding_pass_service.generate(
+                    ticket_number=ticket.ticket_number,
+                    passenger_name=passenger.full_name,
+                    source_airport=ticket.source_airport,
+                    source_city=ticket.source_airport_name or ticket.source_airport,
+                    destination_airport=ticket.destination_airport,
+                    destination_city=ticket.destination_airport_name or ticket.destination_airport,
+                    flight_date=str(ticket.flight_date),
+                    flight_time=ticket.flight_time.strftime("%H:%M") if ticket.flight_time else "TBD",
+                    seat=ticket.seat_number or "TBD",
+                    gate=ticket.gate or "TBD",
+                    passport_number=passenger.passport_number
                 )
-            
-            ctk.CTkButton(
-                confirm_btn_frame,
-                text="Cancel",
-                font=FONTS['button'],
-                fg_color="transparent",
-                hover_color=COLORS['bg_hover'],
-                border_width=1,
-                border_color=COLORS['border'],
-                text_color=COLORS['text_primary'],
-                height=40,
-                command=confirm_dialog.destroy
-            ).pack(side="left", expand=True, padx=SPACING['xs'])
-            
-            ctk.CTkButton(
-                confirm_btn_frame,
-                text="Delete Permanently",
-                font=FONTS['button'],
-                fg_color=COLORS['error'],
-                hover_color="#cc4242",
-                height=40,
-                command=on_confirm
-            ).pack(side="right", expand=True, padx=SPACING['xs'])
-        
-        ctk.CTkButton(
-            btn_frame,
-            text="🗑️ Delete Passenger",
-            font=FONTS['button'],
-            fg_color=COLORS['error'],
-            hover_color="#cc4242",
-            height=45,
-            command=delete_passenger
-        ).pack(side="left", expand=True, fill="x", padx=(0, SPACING['sm']))
-        
-        # Close button
-        ctk.CTkButton(
-            btn_frame,
-            text="Close",
-            font=FONTS['button'],
-            fg_color=COLORS['accent'],
-            hover_color=COLORS['accent_hover'],
-            height=45,
-            command=dialog.destroy
-        ).pack(side="right", expand=True, fill="x")
+                
+                if ticket_path:
+                    from services.sound_service import sound_service
+                    sound_service.play_success()
+                    # Optionally open the PDF
+                    from pathlib import Path
+                    boarding_pass_service.open_pdf(Path(ticket_path))
+                
+                app.hide_overlay()
+
+        app.show_overlay(
+            ModalTicketDetail,
+            ticket=ticket,
+            passenger_name=passenger.full_name if passenger else "Unknown",
+            passenger_passport=passenger.passport_number if passenger else "N/A",
+            on_reset=do_reset,
+            on_delete=confirm_delete,
+            on_print=print_ticket,
+            on_close=app.hide_overlay
+        )
     
     def on_show(self):
         """Called when view is shown."""

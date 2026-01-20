@@ -239,6 +239,30 @@ class DatabaseManager:
                 session.delete(passenger)
                 return True
             return False
+            
+    def cleanup_old_checkins(self) -> int:
+        """
+        Reset tickets that were checked in more than 24 hours ago.
+        Returns the number of tickets reset.
+        """
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        
+        with self.get_session() as session:
+            old_tickets = session.query(Ticket).filter(
+                Ticket.status == TicketStatus.CHECKED_IN,
+                Ticket.checked_in_at <= cutoff
+            ).all()
+            
+            count = 0
+            for ticket in old_tickets:
+                ticket.status = TicketStatus.BOOKED
+                ticket.seat_number = None
+                ticket.gate = None
+                ticket.checked_in_at = None
+                count += 1
+            
+            return count
 
 
 # Global database instance

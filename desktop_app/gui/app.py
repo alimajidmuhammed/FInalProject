@@ -12,6 +12,8 @@ from gui.history_view import HistoryView
 from gui.dashboard_view import DashboardView
 from config import SESSION_TIMEOUT_SECONDS
 from services.audit_service import audit_service
+from services.esp_service import esp_service
+from database.db_manager import db
 
 
 class App(ctk.CTk):
@@ -27,6 +29,10 @@ class App(ctk.CTk):
         self.geometry("1400x900")
         self.minsize(1200, 700)
         
+        # Start in full screen
+        self.attributes('-fullscreen', True)
+        self.bind("<F11>", self._toggle_fullscreen)
+        
         # Apply theme
         apply_theme(ctk)
         self.configure(fg_color=COLORS['bg_primary'])
@@ -41,9 +47,52 @@ class App(ctk.CTk):
         self._timeout_job = None
         
         self._setup_ui()
+        self._create_top_controls()
         self._setup_keyboard_shortcuts()
+        self._bind_mouse_scroll()
         self._start_activity_tracking()
+        
+        # Cleanup old check-ins on startup
+        try:
+            reset_count = db.cleanup_old_checkins()
+            if reset_count > 0:
+                print(f"[*] Post-startup cleanup: Reset {reset_count} expired check-ins.")
+        except Exception as e:
+            print(f"[!] Startup cleanup failed: {e}")
+            
+        # Schedule periodic cleanup (every 6 hours)
+        self._schedule_checkin_cleanup()
+        
+        # ESP32 Setup
+        self._setup_esp_service()
+        
         self._show_view("booking")
+
+    def _schedule_checkin_cleanup(self):
+        """Schedule the check-in cleanup to run periodically."""
+        try:
+            db.cleanup_old_checkins()
+        except Exception:
+            pass
+        # Run every 6 hours (21,600,000 ms)
+        self.after(21600000, self._schedule_checkin_cleanup)
+    
+    def _setup_esp_service(self):
+        """Initialize ESP32 connection and callbacks."""
+        # Update initial status
+        self.update_esp_status(esp_service.is_connected)
+        
+        # Register callback for future updates
+        esp_service.set_connection_callback(self.update_esp_status)
+        
+        # Attempt connection in background (to not block UI)
+        self.after(1000, self._connect_esp)
+        
+    def _connect_esp(self):
+        """Attempt to connect to ESP32."""
+        if not esp_service.is_connected:
+            print("[*] Auto-connecting to ESP32...")
+            esp_service.auto_connect()
     
     def _setup_ui(self):
         """Setup the main UI layout."""
@@ -68,11 +117,40 @@ class App(ctk.CTk):
         )
         self.content.pack(side="right", fill="both", expand=True)
         
+        # Overlay Container (High-priority z-index layer)
+        self.overlay_container = ctk.CTkFrame(
+            self,
+            fg_color="transparent", # Will be dimmed in show_overlay
+            corner_radius=0
+        )
+        # Initially hidden
+        self.overlay_container.place_forget()
+        
         # Initialize views
         self.views["booking"] = BookingView(self.content, on_booking_complete=self._on_booking_complete)
         self.views["checkin"] = CheckInView(self.content)
         self.views["history"] = HistoryView(self.content)
         self.views["dashboard"] = DashboardView(self.content)
+
+    def _create_top_controls(self):
+        """Create global controls like the close button."""
+        # Close button in top-right
+        self.close_btn = ctk.CTkButton(
+            self,
+            text="✕",
+            width=40,
+            height=40,
+            fg_color=COLORS['error'],
+            hover_color="#ff4d4d",
+            text_color="white",
+            font=("Segoe UI", 18, "bold"),
+            corner_radius=20,
+            command=self.on_closing
+        )
+        self.close_btn.place(relx=0.98, rely=0.02, anchor="ne")
+        
+        # Lift button to top of stack
+        self.close_btn.lift()
     
     def _setup_sidebar(self):
         """Setup the sidebar navigation."""
@@ -190,7 +268,7 @@ class App(ctk.CTk):
     
     def _setup_keyboard_shortcuts(self):
         """Setup global keyboard shortcuts."""
-        self.bind('<Escape>', lambda e: self._show_view("booking"))
+        self.bind('<Escape>', self._on_escape)
         self.bind('<F1>', lambda e: self._show_view("booking"))
         self.bind('<F2>', lambda e: self._show_view("checkin"))
         self.bind('<F3>', lambda e: self._show_view("history"))
@@ -297,7 +375,58 @@ class App(ctk.CTk):
                 view.on_show()
         
         self.current_view = view_key
+        
+        # Ensure close button is always on top
+        if hasattr(self, 'close_btn'):
+            self.close_btn.lift()
+        
+        # Ensure overlay stays at the absolute top
+        if hasattr(self, 'overlay_container'):
+            self.overlay_container.lift()
+
+    def show_overlay(self, component_class, **kwargs):
+        """Show an integrated modal overlay."""
+        # Clear existing
+        for widget in self.overlay_container.winfo_children():
+            widget.destroy()
+            
+        # Dim the background using a solid dark color (rgba not supported directly in CTk configure)
+        self.overlay_container.configure(fg_color="#07090d")
+        self.overlay_container.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.overlay_container.lift()
+        
+        # Inject the component
+        component = component_class(self.overlay_container, **kwargs)
+        component.place(relx=0.5, rely=0.5, anchor="center")
+        
+        return component
+
+    def hide_overlay(self):
+        """Hide the integrated modal overlay."""
+        self.overlay_container.place_forget()
+        for widget in self.overlay_container.winfo_children():
+            widget.destroy()
     
+    def _bind_mouse_scroll(self):
+        """Global mouse scroll binding for Linux."""
+        self.bind_all("<Button-4>", self._on_mouse_scroll)
+        self.bind_all("<Button-5>", self._on_mouse_scroll)
+
+    def _on_mouse_scroll(self, event):
+        """Handle global mouse scroll events."""
+        # Find the widget under the mouse or just scroll the active view if possible
+        # Linux Button-4 is scroll up, Button-5 is scroll down
+        delta = 1 if event.num == 4 else -1
+        
+        # Try to find a CTkScrollableFrame in the hierarchy of the widget under mouse
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        
+        while widget:
+            if hasattr(widget, "_parent_canvas"): # Characteristic of CTkScrollableFrame
+                widget._parent_canvas.yview_scroll(-1 * delta, "units")
+                break
+            widget = widget.master
+
     def _on_booking_complete(self, ticket):
         """Handle booking completion."""
         # Could auto-switch to check-in or show notification
@@ -328,6 +457,17 @@ class App(ctk.CTk):
                 view.on_hide()
         
         self.destroy()
+
+    def _toggle_fullscreen(self, event=None):
+        """Toggle fullscreen mode."""
+        self.attributes('-fullscreen', not self.attributes('-fullscreen'))
+
+    def _on_escape(self, event=None):
+        """Handle escape key - exit fullscreen or return home."""
+        if self.attributes('-fullscreen'):
+            self.attributes('-fullscreen', False)
+        else:
+             self._show_view("booking")
 
 
 def create_app() -> App:

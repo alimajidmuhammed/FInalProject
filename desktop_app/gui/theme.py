@@ -9,61 +9,61 @@ _current_mode = "dark"
 # Dark theme colors
 DARK_COLORS = {
     # Backgrounds
-    'bg_primary': '#0a0e17',      # Deep navy black
-    'bg_secondary': '#141b2d',    # Dark blue-gray
-    'bg_card': '#1e2738',         # Card background
-    'bg_input': '#252d3d',        # Input field background
-    'bg_hover': '#2a3548',        # Hover state
+    'bg_primary': '#05070a',      # even deeper navy black
+    'bg_secondary': '#0d1117',    # modern dark gray
+    'bg_card': '#161b22',         # card background
+    'bg_input': '#1c2128',        # slightly darker input
+    'bg_hover': '#30363d',        # hover state
     
     # Accents
-    'accent': '#00d4ff',          # Bright cyan
-    'accent_hover': '#00a8cc',    # Darker cyan
-    'accent_light': '#33ddff',    # Lighter cyan
+    'accent': '#00f2ff',          # Neon cyan
+    'accent_hover': '#00cce6',    # Darker cyan
+    'accent_light': '#80fbff',    # Lighter cyan
     
     # Status colors
-    'success': '#00e676',         # Green
-    'warning': '#ffc107',         # Amber
-    'error': '#ff5252',           # Red
-    'info': '#2196f3',            # Blue
+    'success': '#00ff88',         # Neon green
+    'warning': '#ffcc00',         # Bright amber
+    'error': '#ff3366',           # Vivid red-pink
+    'info': '#0077ff',            # Electric blue
     
     # Text
-    'text_primary': '#ffffff',    # White
-    'text_secondary': '#8892a0',  # Gray
-    'text_muted': '#5a6270',      # Darker gray
+    'text_primary': '#f0f6fc',    # Off-white
+    'text_secondary': '#8b949e',  # Gray
+    'text_muted': '#484f58',      # Darker gray
     
     # Borders
-    'border': '#2a3548',          # Border color
-    'border_light': '#3d4a5c',    # Lighter border
+    'border': '#444c56',          # Lighter border for visibility
+    'border_light': '#57606a',    # Lighter border
 }
 
 # Light theme colors
 LIGHT_COLORS = {
     # Backgrounds
-    'bg_primary': '#f5f7fa',      # Light gray
+    'bg_primary': '#f6f8fa',      # Light gray
     'bg_secondary': '#ffffff',    # White
     'bg_card': '#ffffff',         # Card background
-    'bg_input': '#e8ecf1',        # Input field background
-    'bg_hover': '#e1e5eb',        # Hover state
+    'bg_input': '#f3f4f6',        # Input field background
+    'bg_hover': '#ebedef',        # Hover state
     
     # Accents
-    'accent': '#0099cc',          # Darker cyan for contrast
-    'accent_hover': '#007aa3',    # Even darker cyan
-    'accent_light': '#33b5e5',    # Lighter cyan
+    'accent': '#0969da',          # Professional blue
+    'accent_hover': '#0550ae',    # Darker blue
+    'accent_light': '#54aeff',    # Lighter blue
     
     # Status colors
-    'success': '#00a854',         # Darker green for contrast
-    'warning': '#d48806',         # Darker amber
-    'error': '#cf1322',           # Darker red
-    'info': '#1890ff',            # Blue
+    'success': '#1a7f37',         # Darker green
+    'warning': '#9a6700',         # Darker amber
+    'error': '#cf222e',           # Darker red
+    'info': '#0969da',            # Blue
     
     # Text
-    'text_primary': '#1a1a2e',    # Dark navy
-    'text_secondary': '#5c6370',  # Gray
-    'text_muted': '#8c939d',      # Lighter gray
+    'text_primary': '#1f2328',    # Deep gray
+    'text_secondary': '#656d76',  # Gray
+    'text_muted': '#8c959f',      # Lighter gray
     
     # Borders
-    'border': '#d9dde3',          # Light border
-    'border_light': '#e8ecf1',    # Even lighter border
+    'border': '#d0d7de',          # Light border
+    'border_light': '#d8dee4',    # Even lighter border
 }
 
 # Active colors (defaults to dark)
@@ -71,14 +71,14 @@ COLORS = DARK_COLORS.copy()
 
 # Font configuration
 FONTS = {
-    'heading_large': ('Segoe UI', 32, 'bold'),
-    'heading': ('Segoe UI', 24, 'bold'),
-    'subheading': ('Segoe UI', 18, 'bold'),
-    'body_large': ('Segoe UI', 16),
-    'body': ('Segoe UI', 14),
-    'body_small': ('Segoe UI', 12),
-    'caption': ('Segoe UI', 10),
-    'button': ('Segoe UI', 14, 'bold'),
+    'heading_large': ('Segoe UI Display', 40, 'bold'),
+    'heading': ('Segoe UI Display', 28, 'bold'),
+    'subheading': ('Segoe UI', 20, 'bold'),
+    'body_large': ('Segoe UI', 18),
+    'body': ('Segoe UI', 15),
+    'body_small': ('Segoe UI', 13),
+    'caption': ('Segoe UI', 11),
+    'button': ('Segoe UI', 15, 'bold'),
     'code': ('Consolas', 12),
 }
 
@@ -90,14 +90,16 @@ SPACING = {
     'lg': 24,
     'xl': 32,
     'xxl': 48,
+    '3xl': 64,
 }
 
 # Border radius
 RADIUS = {
-    'sm': 4,
-    'md': 8,
-    'lg': 12,
-    'xl': 16,
+    'sm': 8,
+    'md': 12,
+    'lg': 20,
+    'xl': 28,
+    '2xl': 40,
     'full': 9999,
 }
 

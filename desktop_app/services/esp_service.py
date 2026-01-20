@@ -32,6 +32,7 @@ class ESPCommand(Enum):
     OPEN_GATE = "OPEN_GATE"
     CLOSE_GATE = "CLOSE_GATE"
     LED_GREEN = "LED_GREEN"
+    LED_BLUE = "LED_BLUE"
     LED_RED = "LED_RED"
     LED_OFF = "LED_OFF"
     BUZZER_SUCCESS = "BUZZER_SUCCESS"
@@ -49,8 +50,22 @@ class ESPService:
         self.is_connected = False
         self.connection_type: Optional[str] = None  # 'mqtt' or 'serial'
         self._status_callback: Optional[Callable] = None
+        self._connection_callback: Optional[Callable] = None
         self._reconnect_thread: Optional[threading.Thread] = None
         self._should_reconnect = False
+
+    def set_connection_callback(self, callback: Callable):
+        """Set callback for connection state changes (connected: bool)."""
+        self._connection_callback = callback
+    
+    def _notify_connection_change(self, is_connected: bool):
+        """Notify listener of connection change."""
+        self.is_connected = is_connected
+        if self._connection_callback:
+            try:
+                self._connection_callback(is_connected)
+            except Exception as e:
+                print(f"Error in connection callback: {e}")
     
     # ==================== MQTT Methods ====================
     
@@ -91,7 +106,7 @@ class ESPService:
     def _on_mqtt_connect(self, client, userdata, flags, rc):
         """Callback when MQTT connects."""
         if rc == 0:
-            self.is_connected = True
+            self._notify_connection_change(True)
             # Subscribe to status topic
             client.subscribe(MQTT_TOPIC_STATUS)
             print("Connected to MQTT broker")
@@ -100,7 +115,7 @@ class ESPService:
     
     def _on_mqtt_disconnect(self, client, userdata, rc):
         """Callback when MQTT disconnects."""
-        self.is_connected = False
+        self._notify_connection_change(False)
         print("Disconnected from MQTT broker")
     
     def _on_mqtt_message(self, client, userdata, msg):
@@ -146,7 +161,7 @@ class ESPService:
             self.serial_conn = serial.Serial(port, baud, timeout=1)
             time.sleep(2)  # Wait for Arduino to reset
             
-            self.is_connected = True
+            self._notify_connection_change(True)
             self.connection_type = 'serial'
             print(f"Connected to serial port {port}")
             
@@ -165,12 +180,16 @@ class ESPService:
             while self.serial_conn and self.serial_conn.is_open:
                 try:
                     if self.serial_conn.in_waiting:
-                        line = self.serial_conn.readline().decode('utf-8').strip()
-                        if line and self._status_callback:
-                            self._status_callback('serial', line)
+                        try:
+                            line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
+                            if line and self._status_callback:
+                                self._status_callback('serial', line)
+                        except UnicodeDecodeError:
+                            continue  # Ignore encoding errors
                     time.sleep(0.1)
                 except Exception as e:
-                    print(f"Serial read error: {e}")
+                    print(f"Serial read fatal error: {e}")
+                    self.disconnect()
                     break
         
         thread = threading.Thread(target=reader, daemon=True)
@@ -224,6 +243,10 @@ class ESPService:
         """Turn on red LED."""
         return self.send_command(ESPCommand.LED_RED)
     
+    def led_scanning(self) -> bool:
+        """Turn on blue LED (scanning)."""
+        return self.send_command(ESPCommand.LED_BLUE)
+    
     def led_off(self) -> bool:
         """Turn off LEDs."""
         return self.send_command(ESPCommand.LED_OFF)
@@ -266,7 +289,9 @@ class ESPService:
             self.serial_conn.close()
             self.serial_conn = None
         
-        self.is_connected = False
+        self.serial_conn = None
+        
+        self._notify_connection_change(False)
         self.connection_type = None
     
     def auto_connect(self) -> bool:
